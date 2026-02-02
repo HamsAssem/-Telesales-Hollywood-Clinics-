@@ -275,16 +275,22 @@ export function TelesalesForm({ language }: { language: 'en' | 'ar' }) {
 
       const result = await submitApplication(submitData as any);
       
+      console.log('Submission result:', result);
+      
       if (result.success) {
         setSubmitSuccess(true);
         // Reset form - would need to reset all fields
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        setSubmitError(result.message || t.submitError);
+        // Show the actual error message from the server
+        const errorMessage = result.message || t.submitError;
+        console.error('Submission failed:', errorMessage);
+        setSubmitError(errorMessage);
       }
     } catch (error) {
-      setSubmitError(t.submitError);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('Form submission error:', error);
+      setSubmitError(`Error: ${errorMessage}. ${t.submitError}`);
     } finally {
       setSubmitting(false);
     }
