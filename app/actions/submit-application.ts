@@ -323,7 +323,22 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
       hasJobTitle: !!insertData.job_title,
       jobTitle: insertData.job_title,
       hasFullName: !!insertData.full_name,
+      insertDataKeys: Object.keys(insertData),
+      insertDataSample: {
+        job_title: insertData.job_title,
+        full_name: insertData.full_name,
+        email: insertData.email,
+        phone: insertData.phone,
+        city: insertData.city,
+      },
     });
+
+    // Log the full insert data (excluding file data for readability)
+    const logData = { ...insertData };
+    delete logData.cv_file_url;
+    delete logData.additional_files_urls;
+    delete logData.sample_content_urls;
+    console.log('Full insert data (excluding files):', JSON.stringify(logData, null, 2));
 
     const { data: insertedData, error: insertError } = await supabase
       .from('telesales_applications')
