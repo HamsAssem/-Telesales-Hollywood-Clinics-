@@ -3,23 +3,102 @@
 import { createClient } from '@supabase/supabase-js';
 
 interface FormData {
+  // Section 1: Basic Info
   fullName: string;
   email: string;
   phone: string;
   city: string;
-  country: string;
+  currentlyEmployed: string;
+  
+  // Section 2: Position (single-select)
+  position: string;
+  otherPosition: string;
+  
+  // Receptionist
+  receptionistExperience: string;
+  receptionistYears: string;
+  receptionistTasks: string[];
+  bookingSystems: string;
+  handleDifficultClient: string;
+  receptionistMotivation: string;
+  handleMultipleTasks: string;
+  
+  // Content Creator
+  contentCreatorExperience: string;
+  contentCreatorOtherExperience: string;
+  contentCreatorYears: string;
+  professionalExperience: string;
+  activePlatforms: string[];
+  otherPlatform: string;
+  contentSpecialization: string[];
+  toolsSoftware: string[];
+  otherTools: string;
+  portfolioLinks: string;
+  
+  // Telesales
   telesalesExperience: string;
-  yearsOfExperience: string;
-  previousRoles: string;
+  telesalesYears: string;
+  telesalesExperienceDescription: string;
   languages: string[];
-  communicationSkills: string;
-  importantSkills: string[];
-  fullTimeAvailability: string;
-  startDate: string;
-  motivation: string;
-  salesMotivation: string;
-  cvFile?: { data: string; name: string; type: string }; // base64 string with metadata
-  additionalFiles?: Array<{ data: string; name: string; type: string }>; // base64 strings with metadata
+  otherLanguage: string;
+  phoneCommunicationRating: string;
+  mostImportantSkill: string;
+  
+  // HR
+  hrExperience: string;
+  hrYears: string;
+  hrTasks: string[];
+  handleConfidential: string;
+  
+  // Finance
+  financeExperience: string;
+  financeYears: string;
+  financeTasks: string[];
+  
+  // Doctor
+  licensedToPractice: string;
+  medicalSpecialty: string;
+  clinicalExperience: string;
+  workExperienceType: string;
+  proceduresPerformed: string[];
+  certifications: string;
+  patientSafety: string;
+  
+  // Telesales & Operations
+  telesalesOpsExperience: string;
+  telesalesOpsYears: string;
+  telesalesOpsTasks: string[];
+  crmExperience: string;
+  handleUnhappyCustomer: string;
+  comfortableSalesOps: string;
+  
+  // Operations Manager
+  opsManagerExperience: string;
+  opsManagerYears: string;
+  opsManagerTasks: string[];
+  operationsSystems: string;
+  handleConflicts: string;
+  opsManagerMotivation: string;
+  comfortableDecisions: string;
+  
+  // Other Role
+  otherPositionName: string;
+  otherFieldExperience: string;
+  otherYears: string;
+  otherExperienceDescription: string;
+  comfortableMultipleTasks: string;
+  
+  // Common Availability
+  whenCanStart: string;
+  whenCanStartShort: string;
+  workAvailability: string;
+  linkedinPortfolio: string;
+  agreeToStore: string;
+  
+  // Files
+  cvFile?: { data: string; name: string; type: string };
+  additionalFiles?: Array<{ data: string; name: string; type: string }>;
+  sampleContent?: Array<{ data: string; name: string; type: string }>;
 }
 
 interface SubmitResult {
@@ -38,6 +117,7 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
         ...formData,
         cvFile: formData.cvFile ? 'File uploaded' : 'No file',
         additionalFiles: formData.additionalFiles?.length || 0,
+        sampleContent: formData.sampleContent?.length || 0,
         submittedAt: new Date().toISOString(),
       });
       return {
@@ -49,138 +129,196 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Upload CV file if present
-    let cvUrl: string | null = null;
-    if (formData.cvFile) {
+    // Verify storage bucket exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const applicationsBucket = buckets?.find(b => b.name === 'applications');
+    if (!applicationsBucket) {
+      console.warn('Storage bucket "applications" not found. File uploads will fail.');
+    }
+
+    // Helper function to upload a file
+    const uploadFile = async (fileInfo: { data: string; name: string; type: string }, folder: string): Promise<string | null> => {
       try {
-        // Convert base64 string back to buffer
-        const base64Data = formData.cvFile.data.split(',')[1] || formData.cvFile.data;
+        const base64Data = fileInfo.data.split(',')[1] || fileInfo.data;
         const buffer = Buffer.from(base64Data, 'base64');
-        const safeFileName = formData.cvFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const fileName = `cv_${Date.now()}_${safeFileName}`;
-        
-        // Convert buffer to Uint8Array for Supabase
+        const safeFileName = fileInfo.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${folder}_${Date.now()}_${Math.random().toString(36).substring(7)}_${safeFileName}`;
         const fileData = new Uint8Array(buffer);
         
-        const { data: cvData, error: cvError } = await supabase.storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from('applications')
           .upload(fileName, fileData, {
-            contentType: formData.cvFile.type || 'application/pdf',
+            contentType: fileInfo.type || 'application/pdf',
             upsert: false,
           });
 
-        if (cvError) {
-          console.error('CV upload error details:', {
-            message: cvError.message,
-            statusCode: cvError.statusCode,
-            error: cvError,
-          });
-          // Don't fail the entire submission if file upload fails
-          // Just log the error and continue without the CV URL
-          console.warn('Continuing without CV file upload. Error:', cvError.message);
-        } else {
-          cvUrl = cvData.path;
-          console.log('CV uploaded successfully:', cvUrl);
+        if (uploadError) {
+          console.error(`${folder} upload error:`, uploadError);
+          return null;
         }
+        
+        if (uploadData) {
+          const { data: urlData } = supabase.storage
+            .from('applications')
+            .getPublicUrl(uploadData.path);
+          return urlData.publicUrl;
+        }
+        return null;
       } catch (error) {
-        console.error('CV upload error:', error);
-        // Don't fail the entire submission if file upload fails
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.warn('Continuing without CV file upload. Error:', errorMessage);
+        console.error(`${folder} upload error:`, error);
+        return null;
       }
+    };
+
+    // Upload files
+    let cvUrl: string | null = null;
+    if (formData.cvFile) {
+      cvUrl = await uploadFile(formData.cvFile, 'cv');
     }
 
-    // Upload additional files if present
     const additionalFileUrls: string[] = [];
     if (formData.additionalFiles && formData.additionalFiles.length > 0) {
       for (const fileInfo of formData.additionalFiles) {
-        try {
-          // Convert base64 string back to buffer
-          const base64Data = fileInfo.data.split(',')[1] || fileInfo.data;
-          const buffer = Buffer.from(base64Data, 'base64');
-          const safeFileName = fileInfo.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-          const fileName = `additional_${Date.now()}_${Math.random().toString(36).substring(7)}_${safeFileName}`;
-          
-          // Convert buffer to Uint8Array for Supabase
-          const fileData = new Uint8Array(buffer);
-          
-          const { data: uploadData, error: fileError } = await supabase.storage
-            .from('applications')
-            .upload(fileName, fileData, {
-              contentType: fileInfo.type || 'application/pdf',
-              upsert: false,
-            });
-
-          if (fileError) {
-            console.error('Additional file upload error:', {
-              message: fileError.message,
-              statusCode: fileError.statusCode,
-              error: fileError,
-            });
-            // Continue without this file
-            continue;
-          }
-          additionalFileUrls.push(uploadData.path);
-        } catch (error) {
-          console.error('Additional file upload error:', error);
-          // Continue without this file
-          continue;
-        }
+        const url = await uploadFile(fileInfo, 'additional');
+        if (url) additionalFileUrls.push(url);
       }
     }
 
-    // Convert form values to match database schema types
-    // years_of_experience: INTEGER (convert string to number)
-    // Form sends: "0", "0-1", "1-3", "3-5", "5+"
+    const sampleContentUrls: string[] = [];
+    if (formData.sampleContent && formData.sampleContent.length > 0) {
+      for (const fileInfo of formData.sampleContent) {
+        const url = await uploadFile(fileInfo, 'sample');
+        if (url) sampleContentUrls.push(url);
+      }
+    }
+
+    // Convert years of experience to integer (for roles that need it)
     const yearsOfExpMap: Record<string, number> = {
-      '0': 0,
-      '0-1': 0,
-      '1-3': 2,
+      'less-than-1': 0,
+      '1-2': 1,
+      '2-5': 3,
       '3-5': 4,
-      '5+': 5,
+      'more-than-5': 5,
+      '1-3': 2,
     };
-    const yearsOfExperience = yearsOfExpMap[formData.yearsOfExperience] ?? 0;
 
-    // communication_skills: INTEGER (convert string to number)
-    const commSkillsMap: Record<string, number> = {
-      'excellent': 4,
-      'good': 3,
-      'fair': 2,
-      'needsImprovement': 1,
+    // Build the insert object with all fields
+    const insertData: any = {
+      job_title: formData.position, // Save position to job_title column (primary)
+      other_position: formData.otherPosition || null,
+      full_name: formData.fullName,
+      email: formData.email,
+      phone: formData.phone,
+      city: formData.city,
+      country: formData.city || '', // Combined field
+      currently_employed: formData.currentlyEmployed,
+      when_can_start: formData.whenCanStart || formData.whenCanStartShort,
+      when_can_start_short: formData.whenCanStartShort,
+      work_availability: formData.workAvailability,
+      linkedin_portfolio: formData.linkedinPortfolio || null,
+      agree_to_store: formData.agreeToStore,
+      cv_file_url: cvUrl,
+      additional_files_urls: JSON.stringify(additionalFileUrls),
+      sample_content_urls: JSON.stringify(sampleContentUrls),
+      submitted_at: new Date().toISOString(),
     };
-    const communicationSkills = commSkillsMap[formData.communicationSkills] ?? 2;
 
-    // full_time_availability: BOOLEAN (convert "yes"/"no" to boolean)
-    const fullTimeAvailability = formData.fullTimeAvailability === 'yes';
+    // Receptionist fields
+    if (formData.position === 'receptionist') {
+      insertData.receptionist_experience = formData.receptionistExperience;
+      insertData.receptionist_years = formData.receptionistYears;
+      insertData.receptionist_tasks = JSON.stringify(formData.receptionistTasks);
+      insertData.booking_systems = formData.bookingSystems || null;
+      insertData.handle_difficult_client = formData.handleDifficultClient || null;
+      insertData.receptionist_motivation = formData.receptionistMotivation || null;
+      insertData.handle_multiple_tasks = formData.handleMultipleTasks;
+    }
 
-    // start_date: DATE (already in YYYY-MM-DD format from date input, should work as-is)
+    // Content Creator fields
+    if (formData.position === 'marketing-content-creator') {
+      insertData.content_creator_experience = formData.contentCreatorExperience;
+      insertData.content_creator_other_experience = formData.contentCreatorOtherExperience || null;
+      insertData.content_creator_years = formData.contentCreatorYears;
+      insertData.professional_experience = formData.professionalExperience || null;
+      insertData.active_platforms = JSON.stringify(formData.activePlatforms);
+      insertData.other_platform = formData.otherPlatform || null;
+      insertData.content_specialization = JSON.stringify(formData.contentSpecialization);
+      insertData.tools_software = JSON.stringify(formData.toolsSoftware);
+      insertData.other_tools = formData.otherTools || null;
+      insertData.portfolio_links = formData.portfolioLinks || null;
+    }
+
+    // Telesales fields
+    if (formData.position === 'telesales') {
+      insertData.telesales_experience_new = formData.telesalesExperience;
+      insertData.telesales_years = formData.telesalesYears;
+      insertData.telesales_experience_description = formData.telesalesExperienceDescription || null;
+      insertData.languages = JSON.stringify(formData.languages);
+      insertData.other_language = formData.otherLanguage || null;
+      insertData.phone_communication_rating = formData.phoneCommunicationRating;
+      insertData.most_important_skill = formData.mostImportantSkill || null;
+    }
+
+    // HR fields
+    if (formData.position === 'human-resources') {
+      insertData.hr_experience = formData.hrExperience;
+      insertData.hr_years = formData.hrYears;
+      insertData.hr_tasks = JSON.stringify(formData.hrTasks);
+      insertData.handle_confidential = formData.handleConfidential || null;
+    }
+
+    // Finance fields
+    if (formData.position === 'finance-accounting') {
+      insertData.finance_experience = formData.financeExperience;
+      insertData.finance_years = formData.financeYears;
+      insertData.finance_tasks = JSON.stringify(formData.financeTasks);
+    }
+
+    // Doctor fields
+    if (formData.position === 'doctor') {
+      insertData.licensed_to_practice = formData.licensedToPractice;
+      insertData.medical_specialty = formData.medicalSpecialty;
+      insertData.clinical_experience = formData.clinicalExperience;
+      insertData.work_experience_type = formData.workExperienceType;
+      insertData.procedures_performed = JSON.stringify(formData.proceduresPerformed);
+      insertData.certifications = formData.certifications || null;
+      insertData.patient_safety = formData.patientSafety || null;
+    }
+
+    // Telesales & Operations fields
+    if (formData.position === 'telesales-operations') {
+      insertData.telesales_ops_experience = formData.telesalesOpsExperience;
+      insertData.telesales_ops_years = formData.telesalesOpsYears;
+      insertData.telesales_ops_tasks = JSON.stringify(formData.telesalesOpsTasks);
+      insertData.crm_experience = formData.crmExperience;
+      insertData.handle_unhappy_customer = formData.handleUnhappyCustomer || null;
+      insertData.comfortable_sales_ops = formData.comfortableSalesOps;
+    }
+
+    // Operations Manager fields
+    if (formData.position === 'operations-manager') {
+      insertData.ops_manager_experience = formData.opsManagerExperience;
+      insertData.ops_manager_years = formData.opsManagerYears;
+      insertData.ops_manager_tasks = JSON.stringify(formData.opsManagerTasks);
+      insertData.operations_systems = formData.operationsSystems || null;
+      insertData.handle_conflicts = formData.handleConflicts || null;
+      insertData.ops_manager_motivation = formData.opsManagerMotivation || null;
+      insertData.comfortable_decisions = formData.comfortableDecisions;
+    }
+
+    // Other Role fields
+    if (formData.position === 'other') {
+      insertData.other_position_name = formData.otherPositionName;
+      insertData.other_field_experience = formData.otherFieldExperience;
+      insertData.other_years = formData.otherYears;
+      insertData.other_experience_description = formData.otherExperienceDescription || null;
+      insertData.comfortable_multiple_tasks = formData.comfortableMultipleTasks;
+    }
 
     // Insert form data into database
-    // Convert arrays to JSON strings for database storage
     const { data: insertedData, error: insertError } = await supabase
       .from('telesales_applications')
-      .insert([
-        {
-          full_name: formData.fullName,
-          email: formData.email,
-          phone: formData.phone,
-          city: formData.city,
-          country: formData.country,
-          telesales_experience: formData.telesalesExperience,
-          years_of_experience: yearsOfExperience,
-          previous_roles: formData.previousRoles,
-          languages: JSON.stringify(formData.languages),
-          communication_skills: communicationSkills,
-          important_skills: JSON.stringify(formData.importantSkills),
-          full_time_availability: fullTimeAvailability,
-          start_date: formData.startDate,
-          motivation: formData.motivation,
-          sales_motivation: formData.salesMotivation,
-          cv_file_url: cvUrl,
-          additional_files_urls: JSON.stringify(additionalFileUrls),
-          submitted_at: new Date().toISOString(),
-        },
-      ])
+      .insert([insertData])
       .select('id');
 
     if (insertError) {
