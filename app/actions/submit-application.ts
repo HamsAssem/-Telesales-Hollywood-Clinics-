@@ -113,7 +113,10 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
     if (!supabaseUrl || !supabaseKey || supabaseUrl === 'your_supabase_project_url_here' || supabaseKey === 'your_supabase_anon_key_here') {
-      console.log('[DEMO MODE] Application submission:', {
+      console.error('[ERROR] Supabase environment variables are missing or not configured!');
+      console.error('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Set (but may be placeholder)' : 'NOT SET');
+      console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY:', supabaseKey ? 'Set (but may be placeholder)' : 'NOT SET');
+      console.log('[DEMO MODE] Application submission (NOT SAVED TO DATABASE):', {
         ...formData,
         cvFile: formData.cvFile ? 'File uploaded' : 'No file',
         additionalFiles: formData.additionalFiles?.length || 0,
@@ -121,9 +124,8 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
         submittedAt: new Date().toISOString(),
       });
       return {
-        success: true,
-        message: 'Application submitted successfully (Demo Mode)',
-        submissionId: `demo-${Date.now()}`,
+        success: false,
+        message: 'Application submission failed: Supabase environment variables are not configured. Please contact the administrator.',
       };
     }
 
@@ -316,6 +318,13 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
     }
 
     // Insert form data into database
+    console.log('Attempting to insert data into database...', {
+      table: 'telesales_applications',
+      hasJobTitle: !!insertData.job_title,
+      jobTitle: insertData.job_title,
+      hasFullName: !!insertData.full_name,
+    });
+
     const { data: insertedData, error: insertError } = await supabase
       .from('telesales_applications')
       .insert([insertData])
@@ -327,6 +336,7 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
         details: insertError,
         hint: insertError.hint,
         code: insertError.code,
+        insertDataKeys: Object.keys(insertData),
       });
       return {
         success: false,
@@ -334,7 +344,16 @@ export async function submitApplication(formData: FormData): Promise<SubmitResul
       };
     }
 
-    const submissionId = insertedData?.[0]?.id;
+    if (!insertedData || insertedData.length === 0) {
+      console.error('No data returned from insert operation');
+      return {
+        success: false,
+        message: 'Failed to submit application: No data returned from database',
+      };
+    }
+
+    const submissionId = insertedData[0]?.id;
+    console.log('Successfully inserted data with ID:', submissionId);
 
     return {
       success: true,
